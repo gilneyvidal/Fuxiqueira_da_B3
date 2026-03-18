@@ -1,7 +1,7 @@
 name: SMC Sentinela Monitor 24h
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/15 * * * *' # Roda a cada 15 minutos
   workflow_dispatch:
 
 jobs:
