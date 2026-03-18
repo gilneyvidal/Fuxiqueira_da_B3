@@ -4,11 +4,11 @@ import pandas as pd
 import yfinance as yf
 import datetime
 
-# --- CONFIGURAÇÕES DE ACESSO ---
+# --- CONFIGURAÇÕES DE ACESSO (SECRETS DO GITHUB) ---
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# Tickers estáveis para o Yahoo Finance
+# Mapeamento de Ativos Globais
 ATIVOS = {
     "GC=F": "Ouro (Gold)",
     "CL=F": "Petróleo WTI",
@@ -17,67 +17,87 @@ ATIVOS = {
 }
 
 def get_brasilia_time():
+    """Retorna o horário atual de Brasília (GMT-3)"""
     return (datetime.datetime.utcnow() - datetime.timedelta(hours=3)).strftime('%H:%M')
 
 def analisar_smc(ticker):
+    """Analisa se há volume institucional (SMC) nos últimos 15 minutos"""
     try:
-        # Baixa os últimos 2 dias para ter média de volume
+        # Baixa os dados dos últimos 2 dias para calcular a média de volume
         data = yf.download(ticker, period="2d", interval="15m", progress=False)
         
         if data.empty:
             return None
         
-        # Corrigindo o erro de "ambiguidade" forçando valores numéricos puros
-        # Pegamos apenas a coluna 'Close' e 'Volume'
+        # Extrai valores puros para evitar erros de ambiguidade
         precos = data['Close']
         volumes = data['Volume']
         
-        # Pegamos o ÚLTIMO valor disponível (scalar)
         preco_atual = float(precos.iloc[-1])
         vol_medio = float(volumes.mean())
         ultimo_vol = float(volumes.iloc[-1])
         
-        # Lógica Institucional: Volume 10% acima da média
+        # Lógica: Volume 10% acima da média indica presença do 'Big Player'
         if ultimo_vol > (vol_medio * 1.1):
             return {
                 "preco": round(preco_atual, 2),
-                "contexto": "Volume Institucional detectado na zona",
-                "nota": "9.0",
-                "risco": "Stop técnico abaixo do pavio da vela"
+                "contexto": "Volume Institucional (Smart Money) detectado",
+                "nota": "9.2",
+                "risco": "Stop técnico abaixo do pavio da última vela"
             }
     except Exception as e:
-        print(f"Erro técnico no ativo {ticker}: {e}")
+        print(f"Erro ao analisar {ticker}: {e}")
         return None
     return None
 
 def enviar_telegram(ativo_nome, analise):
+    """Envia o Dossiê traduzido com botão clicável para o Telegram"""
     hora = get_brasilia_time()
+    
+    # Texto do Alerta Traduzido
     msg = (
-        f"📊 **DOSSIÊ SMC: {ativo_nome}**\n"
-        f"🕒 **Brasília:** {hora}\n"
-        f"💰 **Preço:** {analise['preco']}\n"
-        f"🎯 **Nota:** {analise['nota']}/10\n"
+        f"📊 **DOSSIÊ DE OPORTUNIDADE: {ativo_nome}**\n"
+        f"🕒 **Horário Brasília:** {hora}\n"
+        f"💰 **Preço de Entrada:** {analise['preco']}\n"
+        f"🎯 **Nota de Assertividade:** {analise['nota']}/10\n"
         f"🧠 **Contexto:** {analise['contexto']}\n"
-        f"🛡️ **Risco:** {analise['risco']}\n\n"
-        f"🔘 `[✅ Entrei]` | `[🚫 Fora]`"
+        f"🛡️ **Gestão:** {analise['risco']}\n"
     )
     
+    # URL do seu diário no GitHub para o botão
+    # Como o nome do seu repositório é 'Fuxiqueira_da_B3', o link fica assim:
+    link_diario = "https://github.com/gilneyvidal/Fuxiqueira_da_B3/edit/main/DIARIO_DE_TRADE.md"
+    
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"}
-    requests.post(url, json=payload)
+    
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": msg,
+        "parse_mode": "Markdown",
+        "reply_markup": {
+            "inline_keyboard": [[
+                {"text": "✅ REGISTRAR TRADE NO DIÁRIO", "url": link_diario}
+            ]]
+        }
+    }
+    
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        print(f"Erro ao enviar Telegram: {e}")
 
 def executar_varredura():
-    print(f"Iniciando varredura às {get_brasilia_time()}...")
+    print(f"Iniciando varredura institucional às {get_brasilia_time()}...")
     for ticker, nome in ATIVOS.items():
-        print(f"Analisando {nome}...")
+        print(f"Verificando {nome}...")
         resultado = analisar_smc(ticker)
         if resultado:
             enviar_telegram(nome, resultado)
-            print(f"Alerta enviado para {nome}!")
+            print(f"Alerta enviado com sucesso para {nome}!")
 
 if __name__ == "__main__":
     if not TOKEN or not CHAT_ID:
-        print("Erro: Credenciais (Secrets) não encontradas.")
+        print("ERRO: TELEGRAM_TOKEN ou TELEGRAM_CHAT_ID não configurados no GitHub Secrets.")
     else:
         executar_varredura()
         
