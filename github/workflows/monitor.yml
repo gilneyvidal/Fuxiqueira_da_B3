@@ -1,0 +1,29 @@
+name: SMC Sentinela Monitor 24h
+
+on:
+  schedule:
+    - cron: '*/15 * * * *' # Roda a cada 15 minutos
+  workflow_dispatch: # Permite rodar manualmente pelo site do GitHub
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Código
+        uses: actions/checkout@v3
+
+      - name: Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Instalar Dependências
+        run: |
+          pip install pandas requests pandas_ta
+
+      - name: Executar Inteligência SMC
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python brain.py
+        
