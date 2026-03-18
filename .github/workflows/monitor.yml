@@ -1,7 +1,7 @@
 name: SMC Sentinela Monitor 24h
 on:
   schedule:
-    - cron: '*/15 * * * *' # Roda a cada 15 min
+    - cron: '*/15 * * * *' 
   workflow_dispatch:
 
 jobs:
@@ -21,5 +21,6 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_ID_MAE: ${{ secrets.TELEGRAM_ID_MAE }}
           WEBAPP_URL: ${{ secrets.WEBAPP_URL }}
         run: python brain.py
