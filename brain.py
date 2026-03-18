@@ -2,95 +2,85 @@ import os
 import requests
 import pandas as pd
 import yfinance as yf
-import datetime
 import matplotlib.pyplot as plt
-import mplfinance as mpf
+import datetime
+import time
 import io
 
-# --- ACESSO PROTEGIDO ---
+# --- CONFIGURAÇÕES ---
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-ID_GILNEY = os.getenv("TELEGRAM_CHAT_ID")
-ID_ELISETE = os.getenv("TELEGRAM_ID_MAE")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 WEBAPP_URL = os.getenv("WEBAPP_URL")
 
-IDS_FAMILIA = {"Gilney": ID_GILNEY, "Elisete": ID_ELISETE}
-
+# Watchlist Expandida (Commodities e Metais)
 ATIVOS = {
-    "GC=F": "Ouro", "SI=F": "Prata", "HG=F": "Cobre",
-    "CL=F": "Petróleo", "BTC-USD": "Bitcoin", "^GSPC": "S&P 500"
+    "GC=F": {"nome": "Ouro", "tp": 0.01, "sl": 0.005},
+    "SI=F": {"nome": "Prata", "tp": 0.015, "sl": 0.008},
+    "HG=F": {"nome": "Cobre", "tp": 0.012, "sl": 0.006},
+    "REMX": {"nome": "Terras Raras", "tp": 0.02, "sl": 0.01},
+    "BTC-USD": {"nome": "Bitcoin", "tp": 0.02, "sl": 0.01},
+    "^GSPC": {"nome": "S&P 500", "tp": 0.006, "sl": 0.003}
 }
 
-def get_preco_atual(ticker):
-    try:
-        data = yf.download(ticker, period="1d", interval="1m", progress=False)
-        return float(data['Close'].iloc[-1]) if not data.empty else None
-    except: return None
+def gerar_grafico_dark(ticker, nome):
+    plt.style.use('dark_background')
+    data = yf.download(ticker, period="1d", interval="15m", progress=False)
+    if data.empty: return None
+    
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(data.index, data['Close'], color='#00ff88', linewidth=2)
+    ax.fill_between(data.index, data['Close'], color='#00ff88', alpha=0.1)
+    ax.set_title(f"Fluxo Institucional - {nome}", color='white', fontsize=14)
+    ax.grid(color='#333333', linestyle='--')
+    
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    plt.close()
+    return buf
 
-def enviar_telegram(msg, chat_id, grafico=None, botoes=None):
-    url_base = f"https://api.telegram.org/bot{TOKEN}/"
-    if grafico:
-        url = url_base + "sendPhoto"
-        grafico.seek(0)
-        requests.post(url, data={'chat_id': chat_id, 'caption': msg, 'parse_mode': 'Markdown', 'reply_markup': str(botoes).replace("'", '"')}, files={'photo': grafico})
-    else:
-        url = url_base + "sendMessage"
-        requests.post(url, data={'chat_id': chat_id, 'text': msg, 'parse_mode': 'Markdown'})
+def enviar_dossie(msg, foto, botoes):
+    url_foto = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
+    files = {'photo': foto}
+    data = {'chat_id': CHAT_ID, 'caption': msg, 'parse_mode': 'Markdown', 'reply_markup': json.dumps({'inline_keyboard': botoes})}
+    requests.post(url_foto, files=files, data=data)
 
-def gerenciar_auditoria():
-    """Vigia a planilha e avisa se as metas foram atingidas"""
-    try:
-        r = requests.get(f"{WEBAPP_URL}?acao=get_abertos")
-        ordens = r.json()
-        for o in ordens:
-            ticker = [k for k, v in ATIVOS.items() if v == o['ativo']][0]
-            atual = get_preco_atual(ticker)
-            if not atual: continue
+import json
 
-            resultado = ""
-            if o['tipo'] == "COMPRA":
-                if atual >= float(o['tp']): resultado = "TAKE PROFIT (LUCRO) 💰"
-                elif atual <= float(o['sl']): resultado = "STOP LOSS (PREJUÍZO) 🛑"
-            else:
-                if atual <= float(o['tp']): resultado = "TAKE PROFIT (LUCRO) 💰"
-                elif atual >= float(o['sl']): resultado = "STOP LOSS (PREJUÍZO) 🛑"
-
-            if resultado:
-                requests.get(f"{WEBAPP_URL}?acao=fechar&linha={o['linha']}&resultado={resultado}")
-                for nome, cid in IDS_FAMILIA.items():
-                    enviar_telegram(f"🏁 **AUDITORIA: {o['ativo']} ENCERRADO**\nResultado: {resultado}\nPreço: {atual}", cid)
-    except: pass
-
-def analisar_mercado():
-    for ticker, nome in ATIVOS.items():
+def executar():
+    for ticker, info in ATIVOS.items():
         try:
-            data = yf.download(ticker, period="2d", interval="15m", progress=False)
-            if data.empty: continue
-            ultimo = data.iloc[-1]
-            vol_medio = data['Volume'].mean()
-            preco = round(float(ultimo['Close']), 2)
+            df = yf.download(ticker, period="2d", interval="15m", progress=False)
+            if df.empty: continue
+            
+            preco = float(df['Close'].iloc[-1])
+            vol_medio = float(df['Volume'].mean())
+            ultimo_vol = float(df['Volume'].iloc[-1])
+            vela_verde = df['Close'].iloc[-1] > df['Open'].iloc[-1]
 
-            if ultimo['Volume'] > (vol_medio * 1.4):
-                tipo = "COMPRA" if ultimo['Close'] > ultimo['Open'] else "VENDA"
-                tp = round(preco * 1.015, 2) if tipo == "COMPRA" else round(preco * 0.985, 2)
-                sl = round(preco * 0.993, 2) if tipo == "COMPRA" else round(preco * 1.007, 2)
+            if ultimo_vol > (vol_medio * 1.3):
+                direcao = "COMPRA (LONG)" if vela_verde else "VENDA (SHORT)"
+                tp = round(preco * (1.01 if vela_verde else 0.99), 2)
+                sl = round(preco * (0.995 if vela_verde else 1.005), 2)
+
+                # Registrar na planilha automático (Auditoria do Bot)
+                requests.get(f"{WEBAPP_URL}?acao=sinal&ativo={info['nome']}&direcao={direcao}&preco={preco}&tp={tp}&sl={sl}")
+
+                # Preparar Mensagem e Botões
+                msg = (f"🚨 **DOSSIÊ {direcao}**\n\n"
+                       f"💎 **Ativo:** {info['nome']}\n"
+                       f"💰 **Preço:** {preco}\n"
+                       f"🎯 **Alvo:** {tp}\n"
+                       f"🛑 **Stop:** {sl}\n\n"
+                       f"👇 Gilney, você entrou nessa?")
                 
-                # Registro automático para auditoria de 100% dos sinais
-                requests.get(f"{WEBAPP_URL}?acao=entrada&ativo={nome}&tipo={tipo}&preco={preco}&tp={tp}&sl={sl}")
+                link_posicionado = f"{WEBAPP_URL}?acao=posicionado&ativo={info['nome']}"
+                botoes = [[{"text": "✅ Estou Posicionado", "url": link_posicionado}],
+                          [{"text": "❌ Não Entrei", "url": "https://t.me/"}]]
                 
-                # Gerar Gráfico Dark Mode
-                df_plot = data.tail(20)
-                mc = mpf.make_marketcolors(up='#00ff00', down='#ff0000', inherit=True)
-                s = mpf.make_mpf_style(base_mpf_style='charles', marketcolors=mc, facecolor='#121212', edgecolor='#444')
-                buf = io.BytesIO()
-                mpf.plot(df_plot, type='candle', style=s, title=f"\nSMC: {nome}", savefig=buf)
-                
-                for user_nome, cid in IDS_FAMILIA.items():
-                    link = f"{WEBAPP_URL}?acao=posicionamento&user={user_nome}&ativo={nome}"
-                    botoes = {"inline_keyboard": [[{"text": f"✅ {user_nome}: Entrei", "url": link}]]}
-                    msg = f"🚨 **SINAL DE {tipo}**\n📊 **{nome}**\n💰 Entrada: {preco}\n🎯 Alvo: {tp}\n🛑 Stop: {sl}"
-                    enviar_telegram(msg, cid, grafico=buf, botoes=botoes)
-        except: pass
+                foto = gerar_grafico_dark(ticker, info['nome'])
+                enviar_dossie(msg, foto, botoes)
+        except Exception as e: print(f"Erro: {e}")
 
 if __name__ == "__main__":
-    gerenciar_auditoria()
-    analisar_mercado()
+    executar()
