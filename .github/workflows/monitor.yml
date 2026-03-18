@@ -1,7 +1,7 @@
 name: SMC Sentinela Monitor 24h
 on:
   schedule:
-    - cron: '*/15 * * * *' 
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -14,10 +14,9 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-      - name: Instalar Ferramentas de Elite
-        run: |
-          pip install pandas requests yfinance matplotlib mplfinance
-      - name: Executar Inteligência
+      - name: Instalar Dependências
+        run: pip install pandas requests yfinance matplotlib mplfinance
+      - name: Rodar Auditoria e Sentinela
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
