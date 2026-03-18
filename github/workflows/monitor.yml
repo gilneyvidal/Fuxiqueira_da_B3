@@ -2,14 +2,14 @@ name: SMC Sentinela Monitor 24h
 
 on:
   schedule:
-    - cron: '*/15 * * * *' # Roda a cada 15 minutos
-  workflow_dispatch: # Permite rodar manualmente pelo site do GitHub
+    - cron: '*/15 * * * *' # Roda a cada 15 minutos automaticamente
+  workflow_dispatch: # Permite que você rode o bot manualmente pelo site/celular
 
 jobs:
   analyze:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Código
+      - name: Checkout do Código
         uses: actions/checkout@v3
 
       - name: Configurar Python
@@ -17,9 +17,9 @@ jobs:
         with:
           python-version: '3.9'
 
-      - name: Instalar Dependências
+      - name: Instalar Ferramentas de Análise
         run: |
-          pip install pandas requests pandas_ta
+          pip install pandas requests yfinance
 
       - name: Executar Inteligência SMC
         env:
