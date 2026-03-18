@@ -1,29 +1,25 @@
 name: SMC Sentinela Monitor 24h
-# Forçando re-indexação do workflow do Gilney
 on:
   schedule:
-    - cron: '*/15 * * * *' # Roda a cada 15 minutos automaticamente
-  workflow_dispatch: # Permite que você rode o bot manualmente pelo site/celular
+    - cron: '*/15 * * * *' # Roda a cada 15 min
+  workflow_dispatch:
 
 jobs:
   analyze:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout do Código
+      - name: Checkout
         uses: actions/checkout@v3
-
-      - name: Configurar Python
+      - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-
-      - name: Instalar Ferramentas de Análise
+      - name: Instalar Ferramentas de Elite
         run: |
-          pip install pandas requests yfinance
-
-      - name: Executar Inteligência SMC
+          pip install pandas requests yfinance matplotlib mplfinance
+      - name: Executar Inteligência
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          WEBAPP_URL: ${{ secrets.WEBAPP_URL }}
         run: python brain.py
-        
