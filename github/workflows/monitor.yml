@@ -1,5 +1,5 @@
 name: SMC Sentinela Monitor 24h
-
+# Forçando re-indexação do workflow do Gilney
 on:
   schedule:
     - cron: '*/15 * * * *' # Roda a cada 15 minutos automaticamente
