@@ -19,4 +19,4 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           WEBAPP_URL: ${{ secrets.WEBAPP_URL }}
-        run: python brain.py
+        run: python python teste_conexao.py
