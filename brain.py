@@ -54,7 +54,6 @@ def executar():
             df = yf.download(ticker, period="2d", interval="15m", progress=False)
             if df.empty: continue
             
-            # Ajuste para evitar os avisos do Python
             preco = round(df['Close'].iloc[-1:].item(), 2)
             vol_medio = df['Volume'].mean()
             ultimo_vol = df['Volume'].iloc[-1:].item()
@@ -67,6 +66,7 @@ def executar():
                 tp = round(preco + (dif * 2) if vela_verde else preco - (dif * 2), 2)
                 sl = round(preco - dif if vela_verde else preco + dif, 2)
 
+                # PERGUNTA PARA A PLANILHA SE PODE MANDAR
                 check = requests.get(f"{WEBAPP_URL}?acao=sinal&ativo={nome}&direcao={direcao}&preco={preco}&tp={tp}&sl={sl}")
                 
                 if check.text == "OK":
@@ -77,9 +77,13 @@ def executar():
                            f"🛑 **Stop:** {sl}\n\n"
                            f"👇 Quem entrou nessa?")
                     
+                    # URLs de confirmação individuais
+                    link_gilney = f"{WEBAPP_URL}?acao=confirmar&ativo={nome}&quem=gilney"
+                    link_elisete = f"{WEBAPP_URL}?acao=confirmar&ativo={nome}&quem=elisete"
+                    
                     botoes = {"inline_keyboard": [
-                        [{"text": "✅ Gilney Posicionado", "url": f"{WEBAPP_URL}?acao=confirmar&ativo={nome}&quem=gilney"}],
-                        [{"text": "✅ Elisete Posicionado", "url": f"{WEBAPP_URL}?acao=confirmar&ativo={nome}&quem=elisete"}]
+                        [{"text": "✅ Gilney Posicionado", "url": link_gilney}],
+                        [{"text": "✅ Elisete Posicionado", "url": link_elisete}]
                     ]}
                     
                     foto = gerar_grafico(ticker, nome)
