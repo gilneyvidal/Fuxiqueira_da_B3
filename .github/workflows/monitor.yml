@@ -13,7 +13,7 @@ jobs:
         with:
           python-version: '3.9'
       - name: Install
-        run: pip install pandas requests yfinance matplotlib
+        run: pip install pandas requests yfinance matplotlib mplfinance
       - name: Run
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
