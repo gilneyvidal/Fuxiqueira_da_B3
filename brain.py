@@ -4,21 +4,19 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import GradientBoostingRegressor
 import requests
+import time
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta
-import mplfinance as mpf
-import io
-import time
 import random
 
 # --- CONFIGURAÇÃO ---
-st.set_page_config(page_title="Ojuaobot Elite 80", page_icon="🏎️", layout="wide")
+st.set_page_config(page_title="Ojuaobot Elite Stable", page_icon="🏆", layout="wide")
 
 TOKEN_TG = st.secrets["TOKEN_TG"]
 ID_TG = st.secrets["ID_TG"]
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1s1yWFFfBLlHUoZlJldBjgNG7wsPMNIWWGsxMJS067Uo/edit"
-CONF_FILTRO = 80.0  # Nova régua calibrada
+CONF_FILTRO = 85.0
 
 # --- CONEXÃO ---
 def conectar_planilha():
@@ -33,42 +31,7 @@ def conectar_planilha():
 def get_sp_time():
     return datetime.utcnow() - timedelta(hours=3)
 
-# --- SISTEMA DE GRÁFICO E TELEGRAM ---
-def enviar_sinal_com_grafico(ticker, atual, alvo, stop, conf, tipo):
-    # 1. Busca dados para o gráfico (últimos 20 dias)
-    df_hist = yf.download(ticker, period="30d", interval="1d", progress=False)
-    if df_hist.empty: return
-
-    # 2. Gera o gráfico de candles em memória
-    buf = io.BytesIO()
-    ap = [
-        mpf.make_addplot([alvo]*len(df_hist), color='green', linestyle='--', width=1),
-        mpf.make_addplot([stop]*len(df_hist), color='red', linestyle='--', width=1)
-    ]
-    
-    mpf.plot(df_hist, type='candle', style='charles', 
-             title=f'\n{ticker} - {tipo}',
-             ylabel='Preço',
-             addplot=ap,
-             savefig=dict(fname=buf, format='png'),
-             tight_layout=True)
-    buf.seek(0)
-
-    # 3. Monta a legenda
-    texto = (f"🎯 *GATILHO ATIVADO: {ticker}*\n"
-             f"🔥 Confiança: {conf:.1f}%\n"
-             f"👉 Tipo: {tipo}\n"
-             f"💵 Entrada: {atual:.2f}\n"
-             f"🚀 Alvo: {alvo:.2f} | 🛑 Stop: {stop:.2f}")
-
-    # 4. Envia via Telegram
-    url = f"https://api.telegram.org/bot{TOKEN_TG}/sendPhoto"
-    try:
-        requests.post(url, data={"chat_id": ID_TG, "caption": texto, "parse_mode": "Markdown"}, 
-                      files={"photo": buf})
-    except: pass
-
-def enviar_msg_tg(texto):
+def enviar_tg(texto):
     url = f"https://api.telegram.org/bot{TOKEN_TG}/sendMessage"
     try: requests.post(url, data={"chat_id": ID_TG, "text": texto, "parse_mode": "Markdown"})
     except: pass
@@ -88,10 +51,9 @@ def calcular_indicadores(df):
 def treinar_e_prever(ticker):
     try:
         df = yf.download(ticker, period="150d", interval="1d", progress=False)
-        if len(df) < 55: return None
+        if len(df) < 50: return None
         df_ind = calcular_indicadores(df)
         
-        # Filtro de Tendência Macro (OPÇÃO B)
         preco_atual = df_ind['Close'].iloc[-1]
         ma50 = df_ind['MA50'].iloc[-1]
         tendencia = "ALTA" if preco_atual > ma50 else "BAIXA"
@@ -101,7 +63,8 @@ def treinar_e_prever(ticker):
         y = df_ind['Close'].iloc[1:].values
         
         modelo = GradientBoostingRegressor(n_estimators=100, random_state=42).fit(X, y)
-        prev = float(modelo.predict(df_ind[features].iloc[-1].values.reshape(1, -1))[0])
+        last_row = df_ind[features].iloc[-1].values.reshape(1, -1)
+        prev = float(modelo.predict(last_row)[0])
         
         return prev, preco_atual, float(df_ind['ATR'].iloc[-1]), tendencia
     except: return None
@@ -119,36 +82,38 @@ def gerenciar_operacoes(sheet):
                 entrada = float(str(linha[2]).replace(',', '.'))
                 alvo = float(str(linha[3]).replace(',', '.'))
                 stop = float(str(linha[5]).replace(',', '.'))
-                
                 df_at = yf.download(ticker, period="1d", progress=False)
                 agora = float(df_at['Close'].iloc[-1])
                 
-                encerrou = False
+                finalizou = False
                 if (alvo > entrada and agora >= alvo) or (alvo < entrada and agora <= alvo):
-                    status, encerrou = "🎯 ALVO ATINGIDO", True
+                    status, finalizou = "🎯 ALVO ATINGIDO", True
                 elif (alvo > entrada and agora <= stop) or (alvo < entrada and agora >= stop):
-                    status, encerrou = "🛑 STOPADO", True
+                    status, finalizou = "🛑 STOPADO", True
                 
-                if encerrou:
+                if finalizou:
                     lucro = round(agora - entrada if alvo > entrada else entrada - agora, 2)
                     sheet.update(f'G{i}:I{i}', [[round(agora, 2), lucro, status]])
-                    enviar_msg_tg(f"💰 *ORDEM FECHADA*\nAtivo: {ticker}\nStatus: {status}\nLucro: R$ {lucro}")
+                    enviar_tg(f"💰 *ORDEM FECHADA*\nAtivo: {ticker}\nResultado: {status}\nLucro: R$ {lucro}")
             except: continue
     except: pass
 
-# --- UI E SCANNER ---
-st.title("🏆 OJUAOBOT ELITE 80")
+# --- UI PRINCIPAL ---
+st.title("🏆 OJUAOBOT ELITE STABLE")
 agora_sp = get_sp_time()
+st.write(f"🕒 **Status:** Online | {agora_sp.strftime('%H:%M:%S')}")
 
 SCAN_LIST = [
-    "PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA", "BBAS3.SA", "ABEV3.SA", "MGLU3.SA", "B3SA3.SA", 
-    "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "NVDA", "BTC-USD", "ETH-USD", "SOL-USD"
+    "PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA", "BBAS3.SA", "ABEV3.SA", "MGLU3.SA", "B3SA3.SA", "HAPV3.SA", "ELET3.SA", 
+    "WEGE3.SA", "RENT3.SA", "SUZB3.SA", "JBSS3.SA", "RAIL3.SA", "GGBR4.SA", "CSNA3.SA", "COGN3.SA", "AZUL4.SA", "LREN3.SA",
+    "AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "NVDA", "NFLX", "PYPL", "ADBE", "INTC", "AMD", "BABA", "DIS", "V", "MA", 
+    "JPM", "BAC", "PFE", "KO", "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "ADA-USD", "AVAX-USD", "DOT-USD", "LINK-USD", "DOGE-USD"
 ]
 
 sheet = conectar_planilha()
 gerenciar_operacoes(sheet)
 
-# Tabela de ordens
+# Carregar dados da planilha para a tabela
 abertos = []
 df_full = pd.DataFrame()
 if sheet:
@@ -157,38 +122,55 @@ if sheet:
         df_full = pd.DataFrame(bruto[1:], columns=bruto[0])
         abertos = df_full[df_full['Status'] == '⏳ EM ANDAMENTO']['Ticker'].tolist()
 
-# OPÇÃO C: BOTÃO DE SCAN MANUAL
+# BOTÃO DE SCAN MANUAL
 if st.button("🚀 REESCANEAR AGORA"):
-    with st.spinner("Procurando sinais com régua de 80%..."):
-        encontrou = False
-        for ticker in SCAN_LIST:
-            if ticker in abertos: continue
-            res = treinar_e_prever(ticker)
-            if res:
-                prev, atual, atr, tend = res
-                diff = ((prev - atual) / atual) * 100
-                conf = min(65 + (abs(diff) * 12), 99)
-                
-                if conf >= CONF_FILTRO:
-                    if (diff > 0 and tend == "ALTA") or (diff < 0 and tend == "BAIXA"):
-                        tipo = "✅ COMPRA" if diff > 0 else "⚠️ VENDA"
-                        stop = atual - (atr * 1.5) if diff > 0 else atual + (atr * 1.5)
-                        enviar_sinal_com_grafico(ticker, atual, prev, stop, conf, tipo)
-                        sheet.append_row([agora_sp.strftime('%d/%m/%Y %H:%M'), ticker, atual, prev, f"{conf:.1f}%", stop, atual, 0, "⏳ EM ANDAMENTO"], value_input_option="USER_ENTERED")
-                        st.success(f"Sinal enviado para {ticker}!")
-                        encontrou = True
-        if not encontrou: st.warning("Nenhum sinal sólido na régua de 80% agora.")
+    st.info("Iniciando scan manual em 50 ativos...")
+    sinais_manuais = []
+    for ticker in SCAN_LIST:
+        res = treinar_e_prever(ticker)
+        if res:
+            prev, atual, atr, tend = res
+            diff = ((prev - atual) / atual) * 100
+            conf = min(65 + (abs(diff) * 12), 99)
+            if conf >= CONF_FILTRO:
+                if (diff > 0 and tend == "ALTA") or (diff < 0 and tend == "BAIXA"):
+                    sinais_manuais.append({"t": ticker, "tp": "✅ COMPRA" if diff > 0 else "⚠️ VENDA", "c": conf})
+    if sinais_manuais:
+        for s in sinais_manuais: st.success(f"{s['tp']} detectado para {s['t']} ({s['c']:.1f}%)")
+    else: st.warning("Nenhuma oportunidade sólida encontrada agora.")
 
-# RELATÓRIO AUTOMÁTICO MINUTO 40
+# RELATÓRIO MINUTO 40
 if 'last_h' not in st.session_state: st.session_state.last_h = ""
-if agora_sp.minute >= 40 and st.session_state.last_h != agora_sp.hour:
-    # (Lógica idêntica ao scan manual para o relatório automático)
-    st.session_state.last_h = agora_sp.hour
-    st.rerun()
+cur_h = agora_sp.strftime("%H")
 
+if agora_sp.minute >= 40 and st.session_state.last_h != cur_h:
+    sinais_hora = []
+    for ticker in SCAN_LIST:
+        res = treinar_e_prever(ticker)
+        if res:
+            prev, atual, atr, tend = res
+            diff = ((prev - atual) / atual) * 100
+            conf = min(65 + (abs(diff) * 12), 99)
+            if conf >= CONF_FILTRO and ((diff > 0 and tend == "ALTA") or (diff < 0 and tend == "BAIXA")):
+                sinais_hora.append({"t": ticker, "a": atual, "p": prev, "s": (atual-(atr*1.5) if diff > 0 else atual+(atr*1.5)), "tp": "✅ COMPRA" if diff > 0 else "⚠️ VENDA", "c": conf})
+    
+    if sinais_hora:
+        msg = f"🏆 *RELATÓRIO OJUAOBOT - {agora_sp.strftime('%H:40')}*\n"
+        for s in sinais_hora:
+            msg += f"🔹 *{s['t']}* ({s['c']:.1f}%)\n👉 {s['tp']} | Alvo: {s['p']:.2f}\n\n"
+            sheet.append_row([agora_sp.strftime('%d/%m/%Y %H:%M'), s['t'], s['a'], s['p'], f"{s['c']:.1f}%", s['s'], s['a'], 0, "⏳ EM ANDAMENTO"], value_input_option="USER_ENTERED")
+        enviar_tg(msg)
+    else:
+        enviar_tg(f"⚖️ *STATUS OJUAOBOT*: {len(abertos)} ordens ativas. Sem novos sinais agora. 🛡️")
+    st.session_state.last_h = cur_h
+
+# --- AQUI ESTÁ A TABELA QUE SUMIU! ---
 st.divider()
 st.subheader(f"📊 Ordens Ativas: {len(abertos)}")
-if not df_full.empty: st.dataframe(df_full.tail(30), use_container_width=True)
-st.write(f"🕒 **Última atualização:** {agora_sp.strftime('%H:%M:%S')}")
+if not df_full.empty:
+    st.dataframe(df_full.tail(50), use_container_width=True)
+else:
+    st.write("Aguardando conexão com a planilha...")
 
+st.write(f"🕒 **Última atualização:** {agora_sp.strftime('%H:%M:%S')}")
 time.sleep(60); st.rerun()
