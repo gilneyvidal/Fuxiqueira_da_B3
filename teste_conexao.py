@@ -26,7 +26,7 @@ def gerar_grafico_profissional(df, nome, tp, sl, entrada):
     
     # Plotando o gráfico de Candles M15
     mpf.plot(df, type='candle', style=s, 
-             title=f"\n[TESTE] Fluxo Institucional - {nome} (M15)",
+             title=f"\n[TESTE AUDACIOSO] {nome} (M15)",
              ylabel='Preço',
              hlines=hlines_config,
              savefig=dict(fname=buf, format='png', bbox_inches='tight'),
@@ -40,47 +40,51 @@ def testar_audacia():
     ticker = "GC=F"
     nome = "Ouro (TESTE)"
     
-    # Pega dados históricos recentes (mesmo com mercado fechado)
+    print(f"Buscando dados para {ticker}...")
     df = yf.download(ticker, period="3d", interval="15m", progress=False)
     
     if df.empty:
-        print("Erro: Não foi possível pegar dados históricos para o teste.")
+        print("Erro: Não foi possível pegar dados históricos.")
         return
 
-    # Pega o último preço fechado como entrada
-    entrada = round(df['Close'].iloc[-1:].item(), 2)
+    # --- AJUSTE CIRÚRGICO AQUI ---
+    # Pegamos apenas a coluna 'Close' e o último valor de forma garantida
+    ultimo_fechamento = df['Close'].values[-1]
     
-    # Força uma entrada AUDACIOSA (Gerenciamento 2:1)
-    # Stop de 10 pontos abaixo, Alvo de 20 pontos acima (exemplo rápido)
+    # Se o yfinance retornar um array (tabela), pegamos o primeiro item
+    if hasattr(ultimo_fechamento, "__len__"):
+        entrada = round(float(ultimo_fechamento[0]), 2)
+    else:
+        entrada = round(float(ultimo_fechamento), 2)
+    
+    # Configuração do trade fake (2:1)
     sl = round(entrada - 10.00, 2)
     tp = round(entrada + 20.00, 2)
     
-    print(f"Gerando sinal fake do Ouro: Entrada {entrada}, Alvo {tp}, Stop {sl}")
+    print(f"Sucesso! Entrada: {entrada} | Alvo: {tp} | Stop: {sl}")
 
-    # Monta a mensagem pro Telegram
-    msg = (f"🚨 **🚨 [SINAL FAKE - TESTE VISUAL] 🚨** 🚨\n"
-           f"Audácia ativada! Ignorando volume para testar o gráfico novo.\n\n"
+    msg = (f"🚨 **🚨 [TESTE AUDACIOSO - FUXIQUEIRA] 🚨** 🚨\n"
+           f"Se você está vendo isso, o gráfico de Candles funcionou!\n\n"
            f"💎 **Ativo:** {nome}\n"
            f"💰 **Preço de Entrada:** {entrada}\n"
-           f"🎯 **Alvo (2:1):** {tp}\n"
-           f"🛑 **Stop Loss:** {sl}\n\n"
-           f"👇 Aprovado o visual do novo dossiê?")
+           f"🎯 **Alvo:** {tp}\n"
+           f"🛑 **Stop:** {sl}\n\n"
+           f"O visual ficou do jeito que você queria?")
     
-    # Botões Fake (sem URL real de confirmação, só pro layout)
     botoes = {"inline_keyboard": [
-        [{"text": "✅ Layout Aprovado", "url": "https://telegram.org"}],
-        [{"text": "❌ Precisa Ajustar", "url": "https://telegram.org"}]
+        [{"text": "🔥 FICOU TOP", "url": "https://t.me/BotFather"}],
+        [{"text": "🛠️ PRECISA AJUSTAR", "url": "https://t.me/BotFather"}]
     ]}
     
-    # Gera o gráfico de candles com as linhas marcadas
+    # Gera o gráfico com as 40 últimas velas
     foto = gerar_grafico_profissional(df.tail(40), nome, tp, sl, entrada)
     
-    # Manda pro Telegram
+    # Envio pro Telegram
     requests.post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", 
                   files={'photo': foto}, 
                   data={'chat_id': CHAT_ID, 'caption': msg, 'parse_mode': 'Markdown', 'reply_markup': json.dumps(botoes)})
     
-    print("Sinal Audacioso enviado pro Telegram!")
+    print("Sinal enviado com sucesso!")
 
 if __name__ == "__main__":
     testar_audacia()
