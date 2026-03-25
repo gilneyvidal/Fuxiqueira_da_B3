@@ -12,10 +12,16 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 WEBAPP_URL = os.getenv("WEBAPP_URL")
 
-# Ativos de Alta Volatilidade (Onde os Big Players jogam)
+# Mapeamento: Ticker_Yahoo -> [Nome_Exibicao, Ticker_Busca_Plataforma]
 ATIVOS = {
-    "GC=F": "Ouro", "CL=F": "Petróleo", "BTC-USD": "Bitcoin", "ETH-USD": "Ethereum",
-    "^GSPC": "S&P 500", "NQ=F": "Nasdaq 100", "EURUSD=X": "Euro/Dólar", "SI=F": "Prata"
+    "GC=F": ["Ouro", "XAUUSD"],
+    "CL=F": ["Petróleo", "WTI"],
+    "BTC-USD": ["Bitcoin", "BTCUSD"],
+    "ETH-USD": ["Ethereum", "ETHUSD"],
+    "^GSPC": ["S&P 500", "US500"],
+    "NQ=F": ["Nasdaq 100", "USTEC"],
+    "EURUSD=X": ["Euro/Dólar", "EURUSD"],
+    "SI=F": ["Prata", "XAGUSD"]
 }
 
 def gerar_grafico_profissional(df, nome, tp, sl, entrada):
@@ -36,10 +42,11 @@ def executar():
         r = requests.get(f"{WEBAPP_URL}?acao=get_abertos")
         if r.status_code == 200:
             for ordem in r.json():
-                ticker_map = {v: k for k, v in ATIVOS.items()}
-                tk = ticker_map.get(ordem['ativo'])
-                if not tk: continue
-                df_monitor = yf.download(tk, period="1d", interval="1m", progress=False)
+                # Busca reversa do ticker yahoo pelo nome do ativo
+                tk_yahoo = next((k for k, v in ATIVOS.items() if v[0] == ordem['ativo']), None)
+                if not tk_yahoo: continue
+                
+                df_monitor = yf.download(tk_yahoo, period="1d", interval="1m", progress=False)
                 if not df_monitor.empty:
                     if isinstance(df_monitor.columns, pd.MultiIndex): df_monitor.columns = df_monitor.columns.get_level_values(0)
                     preco_atual = round(float(df_monitor['Close'].iloc[-1]), 4)
@@ -49,10 +56,12 @@ def executar():
                     if res: requests.get(f"{WEBAPP_URL}?acao=fechar&linha={ordem['index']}&resultado={res}")
     except: pass
 
-    # 2. BUSCAR NOVOS SINAIS (Régua 1.3x)
-    for ticker, nome in ATIVOS.items():
+    # 2. BUSCAR NOVOS SINAIS
+    for tk_yahoo, info in ATIVOS.items():
+        nome_exibicao = info[0]
+        ticker_busca = info[1]
         try:
-            df = yf.download(ticker, period="2d", interval="15m", progress=False)
+            df = yf.download(tk_yahoo, period="2d", interval="15m", progress=False)
             if df.empty: continue
             if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
             for c in ['Open', 'High', 'Low', 'Close']: df[c] = pd.to_numeric(df[c], errors='coerce')
@@ -65,18 +74,24 @@ def executar():
 
             if ultimo_vol > (vol_medio * 1.3): # CALIBRAGEM 1.3x
                 direcao = "COMPRA" if verde else "VENDA"
-                dif = preco * 0.005
+                dif = preco * 0.005 # 0.5% de risco
                 tp = round(preco + (dif * 2) if verde else preco - (dif * 2), 4)
                 sl = round(preco - dif if verde else preco + dif, 4)
 
-                check = requests.get(f"{WEBAPP_URL}?acao=sinal&ativo={nome}&direcao={direcao}&preco={preco}&tp={tp}&sl={sl}")
+                check = requests.get(f"{WEBAPP_URL}?acao=sinal&ativo={nome_exibicao}&direcao={direcao}&preco={preco}&tp={tp}&sl={sl}")
                 if check.text == "OK":
-                    msg = f"🚨 **SINAL DE {direcao}**\n💎 **{nome}** | 💰 **Entrada:** {preco}\n🎯 **Alvo:** {tp} | 🛑 **Stop:** {sl}"
-                    botoes = {"inline_keyboard": [[{"text": "✅ Gilney Posicionado", "url": f"{WEBAPP_URL}?acao=confirmar&ativo={nome}&quem=gilney"}],
-                                                  [{"text": "✅ Elisete Posicionado", "url": f"{WEBAPP_URL}?acao=confirmar&ativo={nome}&quem=elisete"}]]}
-                    foto = gerar_grafico_profissional(df.tail(40), nome, tp, sl, preco)
+                    # MENSAGEM CONFORME SOLICITADO
+                    msg = (f"🚨 **SINAL DE {direcao} ({ticker_busca})**\n"
+                           f"💎 {nome_exibicao} | 💰 **Entrada:** {preco}\n"
+                           f"🎯 **Alvo:** {tp} | 🛑 **Stop:** {sl}")
+                    
+                    botoes = {"inline_keyboard": [[{"text": "✅ Gilney Posicionado", "url": f"{WEBAPP_URL}?acao=confirmar&ativo={nome_exibicao}&quem=gilney"}],
+                                                  [{"text": "✅ Elisete Posicionado", "url": f"{WEBAPP_URL}?acao=confirmar&ativo={nome_exibicao}&quem=elisete"}]]}
+                    
+                    foto = gerar_grafico_profissional(df.tail(40), nome_exibicao, tp, sl, preco)
                     requests.post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", files={'photo': foto}, 
                                   data={'chat_id': CHAT_ID, 'caption': msg, 'parse_mode': 'Markdown', 'reply_markup': json.dumps(botoes)})
         except: pass
 
 if __name__ == "__main__": executar()
+    
