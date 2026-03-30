@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import mplfinance as mpf
 import io
 import json
+from datetime import datetime
+import pytz
 
 # --- CONFIGS ---
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -37,15 +39,15 @@ def gerar_grafico_profissional(df, nome, tp, sl, entrada):
     return buf
 
 def executar():
+    fuso = pytz.timezone('America/Sao_Paulo')
+    
     # 1. MONITORAR RESULTADOS
     try:
         r = requests.get(f"{WEBAPP_URL}?acao=get_abertos")
         if r.status_code == 200:
             for ordem in r.json():
-                # Busca reversa do ticker yahoo pelo nome do ativo
                 tk_yahoo = next((k for k, v in ATIVOS.items() if v[0] == ordem['ativo']), None)
                 if not tk_yahoo: continue
-                
                 df_monitor = yf.download(tk_yahoo, period="1d", interval="1m", progress=False)
                 if not df_monitor.empty:
                     if isinstance(df_monitor.columns, pd.MultiIndex): df_monitor.columns = df_monitor.columns.get_level_values(0)
@@ -58,30 +60,31 @@ def executar():
 
     # 2. BUSCAR NOVOS SINAIS
     for tk_yahoo, info in ATIVOS.items():
-        nome_exibicao = info[0]
-        ticker_busca = info[1]
+        nome_exibicao, ticker_busca = info[0], info[1]
         try:
             df = yf.download(tk_yahoo, period="2d", interval="15m", progress=False)
             if df.empty: continue
             if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-            for c in ['Open', 'High', 'Low', 'Close']: df[c] = pd.to_numeric(df[c], errors='coerce')
             df = df.dropna()
 
             preco = round(float(df['Close'].iloc[-1]), 4)
             vol_medio = df['Volume'].mean()
             ultimo_vol = df['Volume'].iloc[-1]
             verde = df['Close'].iloc[-1] > df['Open'].iloc[-1]
+            
+            # Captura data/hora do candle atual
+            data_hora_candle = df.index[-1].astimezone(fuso).strftime('%d/%m/%Y - %H:%M')
 
-            if ultimo_vol > (vol_medio * 1.3): # CALIBRAGEM 1.3x
+            if ultimo_vol > (vol_medio * 1.3): 
                 direcao = "COMPRA" if verde else "VENDA"
-                dif = preco * 0.005 # 0.5% de risco
+                dif = preco * 0.005 
                 tp = round(preco + (dif * 2) if verde else preco - (dif * 2), 4)
                 sl = round(preco - dif if verde else preco + dif, 4)
 
                 check = requests.get(f"{WEBAPP_URL}?acao=sinal&ativo={nome_exibicao}&direcao={direcao}&preco={preco}&tp={tp}&sl={sl}")
                 if check.text == "OK":
-                    # MENSAGEM CONFORME SOLICITADO
                     msg = (f"🚨 **SINAL DE {direcao} ({ticker_busca})**\n"
+                           f"📅 **Data/Hora:** {data_hora_candle}\n"
                            f"💎 {nome_exibicao} | 💰 **Entrada:** {preco}\n"
                            f"🎯 **Alvo:** {tp} | 🛑 **Stop:** {sl}")
                     
@@ -94,4 +97,3 @@ def executar():
         except: pass
 
 if __name__ == "__main__": executar()
-    
